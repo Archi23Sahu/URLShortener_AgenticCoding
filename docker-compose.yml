@@ -1,0 +1,66 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Your_strong_Passw0rd!}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q \"SELECT 1\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Redirect cache (cache-aside). The API still works if this is down; it falls back to SQL.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "Server=sqlserver,1433;Database=UrlShortener;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Passw0rd!};TrustServerCertificate=True"
+      ConnectionStrings__Redis: "redis:6379"
+      Shortener__BaseUrl: "http://localhost:8080"
+      # Applies EF Core migrations at startup. Requires the InitialCreate migration to exist (see README Quick Start).
+      Database__MigrateOnStartup: "true"
+      # Rate limiting is on (src/appsettings.json). For load tests from one IP, uncomment:
+      # RateLimit__Enabled: "false"
+      # Metrics and traces go to the Aspire dashboard over OTLP (spec 009).
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_SERVICE_NAME: "url-shortener"
+    # Longer than the host's 30 s shutdown timeout, so a stop lets the click queue drain.
+    stop_grace_period: 35s
+    ports:
+      - "8080:8080"
+
+  # Monitoring UI for metrics and traces: http://127.0.0.1:18888
+  # LOCAL DEVELOPMENT ONLY: anonymous access disables auth on the UI and the OTLP receiver, so the UI is published
+  # on loopback and the OTLP port not at all. Don't reuse this service definition in a shared environment.
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.5.2
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "127.0.0.1:18888:18888"
+
+volumes:
+  sqldata:

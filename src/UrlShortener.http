@@ -1,0 +1,45 @@
+# Sample requests for the URL shortener (Visual Studio / VS Code REST Client).
+# Run the API first: `dotnet run --project src` (http://localhost:5265) or `docker compose up` (http://localhost:8080).
+# Make sure Shortener__BaseUrl matches the host you use so returned short URLs resolve.
+
+@host = http://localhost:5265
+@code = REPLACE_WITH_A_CODE_FROM_THE_CREATE_RESPONSE
+
+### Create a short URL (201; 200 if the URL already has an active link)
+POST {{host}}/api/v1/shorten
+Content-Type: application/json
+
+{
+  "url": "https://www.example.com/very/long/url",
+  "expiryDays": 30
+}
+
+### Redirect (302; 404 unknown, 410 expired)
+GET {{host}}/{{code}}
+
+### Update the target and optionally reset the expiry
+PUT {{host}}/api/v1/shorten/{{code}}
+Content-Type: application/json
+
+{
+  "url": "https://example.org/new-target",
+  "expiryDays": 10
+}
+
+### Delete a link and its click history (204)
+DELETE {{host}}/api/v1/shorten/{{code}}
+
+### Analytics: totals, unique visitors, clicks per country
+GET {{host}}/api/v1/analytics/{{code}}
+
+### Daily clicks (UTC days, inclusive; defaults to the last 30 days)
+GET {{host}}/api/v1/analytics/{{code}}/daily?from=2026-10-01&to=2026-10-31
+
+### Clicks per country
+GET {{host}}/api/v1/analytics/{{code}}/countries
+
+### Clicks per browser
+GET {{host}}/api/v1/analytics/{{code}}/browsers
+
+### Health (Healthy / Degraded when Redis is down / Unhealthy when SQL Server is down)
+GET {{host}}/health
